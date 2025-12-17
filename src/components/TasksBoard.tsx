@@ -12,20 +12,13 @@ import { format, isPast, isToday } from 'date-fns';
 import { he } from 'date-fns/locale';
 import { Plus, CheckSquare, Trash2, Calendar, Circle, Clock, CheckCircle2, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
+import type { Tables, Enums } from '@/integrations/supabase/types';
 
-type TaskStatus = 'todo' | 'doing' | 'done';
+type TaskStatus = Enums<'task_status'>;
 
-interface Task {
-  id: string;
-  user_id: string;
-  title: string;
-  description: string | null;
-  status: TaskStatus;
-  due_date: string | null;
-  created_at: string;
-  updated_at: string;
-  profiles?: { name: string; avatar_color: string };
-}
+type Task = Tables<'tasks'> & {
+  profiles?: { name: string; avatar_color: string | null };
+};
 
 const STATUS_CONFIG = {
   todo: { label: 'לביצוע', icon: Circle, color: 'bg-status-todo text-foreground' },
@@ -47,16 +40,59 @@ export default function TasksBoard() {
   const [submitting, setSubmitting] = useState(false);
 
   const fetchTasks = async () => {
-    const { data } = await supabase
-      .from('tasks')
-      .select('*, profiles(name, avatar_color)')
-      .order('due_date', { ascending: true, nullsFirst: false })
-      .order('created_at', { ascending: false });
-    
-    if (data) {
-      setTasks(data as unknown as Task[]);
+    try {
+      // Fetch tasks
+      const { data: tasksData, error: tasksError } = await supabase
+        .from('tasks')
+        .select('*')
+        .order('due_date', { ascending: true, nullsFirst: false })
+        .order('created_at', { ascending: false });
+      
+      if (tasksError) {
+        console.error('Error fetching tasks:', tasksError);
+        toast.error('שגיאה בטעינת המטלות');
+        setTasks([]);
+        setLoading(false);
+        return;
+      }
+
+      if (!tasksData || tasksData.length === 0) {
+        setTasks([]);
+        setLoading(false);
+        return;
+      }
+
+      // Fetch profiles for all unique user_ids
+      const userIds = [...new Set(tasksData.map(t => t.user_id))];
+      const { data: profilesData, error: profilesError } = await supabase
+        .from('profiles')
+        .select('user_id, name, avatar_color')
+        .in('user_id', userIds);
+
+      if (profilesError) {
+        console.error('Error fetching profiles:', profilesError);
+        // Continue without profiles data
+      }
+
+      // Create a map of user_id -> profile
+      const profilesMap = new Map(
+        (profilesData || []).map(p => [p.user_id, { name: p.name, avatar_color: p.avatar_color }])
+      );
+
+      // Combine tasks with profiles
+      const tasksWithProfiles: Task[] = tasksData.map(task => ({
+        ...task,
+        profiles: profilesMap.get(task.user_id) || undefined,
+      }));
+
+      setTasks(tasksWithProfiles);
+    } catch (err) {
+      console.error('Unexpected error:', err);
+      toast.error('שגיאה בטעינת המטלות');
+      setTasks([]);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   useEffect(() => {
@@ -90,6 +126,11 @@ export default function TasksBoard() {
       return;
     }
 
+    if (!editingTask && !user?.id) {
+      toast.error('נא להתחבר למערכת');
+      return;
+    }
+
     setSubmitting(true);
     
     if (editingTask) {
@@ -104,6 +145,7 @@ export default function TasksBoard() {
         .eq('id', editingTask.id);
 
       if (error) {
+        console.error('Error updating task:', error);
         toast.error('שגיאה בעדכון המשימה');
       } else {
         toast.success('המשימה עודכנה!');
@@ -112,7 +154,7 @@ export default function TasksBoard() {
       }
     } else {
       const { error } = await supabase.from('tasks').insert({
-        user_id: user?.id,
+        user_id: user!.id,
         title: title.trim(),
         description: description.trim() || null,
         due_date: dueDate || null,
@@ -120,6 +162,7 @@ export default function TasksBoard() {
       });
 
       if (error) {
+        console.error('Error creating task:', error);
         toast.error('שגיאה ביצירת המשימה');
       } else {
         toast.success('המשימה נוצרה!');
@@ -142,6 +185,7 @@ export default function TasksBoard() {
   const handleDelete = async (id: string) => {
     const { error } = await supabase.from('tasks').delete().eq('id', id);
     if (error) {
+      console.error('Error deleting task:', error);
       toast.error('שגיאה במחיקה');
     } else {
       toast.success('המשימה נמחקה');
@@ -155,6 +199,7 @@ export default function TasksBoard() {
       .eq('id', taskId);
 
     if (error) {
+      console.error('Error updating task status:', error);
       toast.error('שגיאה בעדכון הסטטוס');
     }
   };

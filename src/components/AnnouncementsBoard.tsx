@@ -11,16 +11,11 @@ import { formatDistanceToNow } from 'date-fns';
 import { he } from 'date-fns/locale';
 import { Plus, MessageSquare, Trash2, Tag } from 'lucide-react';
 import { toast } from 'sonner';
+import type { Tables } from '@/integrations/supabase/types';
 
-interface Announcement {
-  id: string;
-  user_id: string;
-  title: string;
-  body: string;
-  tags: string[];
-  created_at: string;
-  profiles?: { name: string; avatar_color: string };
-}
+type Announcement = Tables<'announcements'> & {
+  profiles?: { name: string; avatar_color: string | null };
+};
 
 const TAG_OPTIONS = ['שאלה', 'טיפ', 'בעיה', 'לינק'];
 
@@ -35,15 +30,58 @@ export default function AnnouncementsBoard() {
   const [submitting, setSubmitting] = useState(false);
 
   const fetchAnnouncements = async () => {
-    const { data } = await supabase
-      .from('announcements')
-      .select('*, profiles(name, avatar_color)')
-      .order('created_at', { ascending: false });
-    
-    if (data) {
-      setAnnouncements(data as unknown as Announcement[]);
+    try {
+      // Fetch announcements
+      const { data: announcementsData, error: announcementsError } = await supabase
+        .from('announcements')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (announcementsError) {
+        console.error('Error fetching announcements:', announcementsError);
+        toast.error('שגיאה בטעינת ההודעות');
+        setAnnouncements([]);
+        setLoading(false);
+        return;
+      }
+
+      if (!announcementsData || announcementsData.length === 0) {
+        setAnnouncements([]);
+        setLoading(false);
+        return;
+      }
+
+      // Fetch profiles for all unique user_ids
+      const userIds = [...new Set(announcementsData.map(a => a.user_id))];
+      const { data: profilesData, error: profilesError } = await supabase
+        .from('profiles')
+        .select('user_id, name, avatar_color')
+        .in('user_id', userIds);
+
+      if (profilesError) {
+        console.error('Error fetching profiles:', profilesError);
+        // Continue without profiles data
+      }
+
+      // Create a map of user_id -> profile
+      const profilesMap = new Map(
+        (profilesData || []).map(p => [p.user_id, { name: p.name, avatar_color: p.avatar_color }])
+      );
+
+      // Combine announcements with profiles
+      const announcementsWithProfiles: Announcement[] = announcementsData.map(announcement => ({
+        ...announcement,
+        profiles: profilesMap.get(announcement.user_id) || undefined,
+      }));
+
+      setAnnouncements(announcementsWithProfiles);
+    } catch (err) {
+      console.error('Unexpected error:', err);
+      toast.error('שגיאה בטעינת ההודעות');
+      setAnnouncements([]);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   useEffect(() => {
@@ -69,15 +107,21 @@ export default function AnnouncementsBoard() {
       return;
     }
 
+    if (!user?.id) {
+      toast.error('נא להתחבר למערכת');
+      return;
+    }
+
     setSubmitting(true);
     const { error } = await supabase.from('announcements').insert({
-      user_id: user?.id,
+      user_id: user.id,
       title: title.trim(),
       body: body.trim(),
-      tags: selectedTags,
+      tags: selectedTags.length > 0 ? selectedTags : null,
     });
 
     if (error) {
+      console.error('Error creating announcement:', error);
       toast.error('שגיאה ביצירת ההודעה');
     } else {
       toast.success('ההודעה פורסמה!');
@@ -92,6 +136,7 @@ export default function AnnouncementsBoard() {
   const handleDelete = async (id: string) => {
     const { error } = await supabase.from('announcements').delete().eq('id', id);
     if (error) {
+      console.error('Error deleting announcement:', error);
       toast.error('שגיאה במחיקה');
     } else {
       toast.success('ההודעה נמחקה');
@@ -228,8 +273,8 @@ export default function AnnouncementsBoard() {
                   <p className="mt-2 text-foreground whitespace-pre-wrap">{announcement.body}</p>
                   {announcement.tags && announcement.tags.length > 0 && (
                     <div className="flex flex-wrap gap-2 mt-3">
-                      {announcement.tags.map(tag => (
-                        <Badge key={tag} variant="outline" className={getTagColor(tag)}>
+                      {announcement.tags.map((tag, idx) => (
+                        <Badge key={`${tag}-${idx}`} variant="outline" className={getTagColor(tag)}>
                           {tag}
                         </Badge>
                       ))}
