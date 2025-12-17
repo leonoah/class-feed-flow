@@ -7,6 +7,7 @@ import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import NotFound from "./pages/NotFound";
+import Man from "./pages/Man";
 
 const queryClient = new QueryClient();
 
@@ -56,6 +57,7 @@ const AppRoutes = () => (
   <Routes>
     <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
     <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+    <Route path="/man" element={<Man />} />
     <Route path="*" element={<NotFound />} />
   </Routes>
 );
