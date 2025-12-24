@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { LogOut, Users, MessageSquare, CheckSquare } from 'lucide-react';
+import { LogOut, Users, MessageSquare, CheckSquare, Moon, Sun } from 'lucide-react';
 import OnlineStudents from '@/components/OnlineStudents';
 import AnnouncementsBoard from '@/components/AnnouncementsBoard';
 import TasksBoard from '@/components/TasksBoard';
@@ -11,6 +11,38 @@ import { toast } from 'sonner';
 export default function Dashboard() {
   const { profile, signOut } = useAuth();
   const [activeTab, setActiveTab] = useState('online');
+  const [isDark, setIsDark] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const stored = window.localStorage.getItem('theme');
+    const prefersDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches;
+    const shouldUseDark = stored === 'dark' || (!stored && prefersDark);
+
+    if (shouldUseDark) {
+      document.documentElement.classList.add('dark');
+      setIsDark(true);
+    } else {
+      document.documentElement.classList.remove('dark');
+      setIsDark(false);
+    }
+  }, []);
+
+  const toggleTheme = () => {
+    if (typeof window === 'undefined') return;
+
+    const next = !isDark;
+    setIsDark(next);
+
+    if (next) {
+      document.documentElement.classList.add('dark');
+      window.localStorage.setItem('theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      window.localStorage.setItem('theme', 'light');
+    }
+  };
 
   const handleSignOut = async () => {
     try {
@@ -29,7 +61,7 @@ export default function Dashboard() {
     <div className="min-h-screen bg-background">
       {/* Header */}
       <header className="border-b border-border bg-card/80 backdrop-blur-sm sticky top-0 z-50">
-        <div className="container mx-auto px-4 h-16 flex items-center justify-between">
+        <div className="container mx-auto px-4 h-16 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div 
               className="w-10 h-10 rounded-full flex items-center justify-center text-lg font-bold text-primary-foreground"
@@ -43,15 +75,31 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex-1 flex items-center justify-center">
             <h1 className="text-xl font-bold font-rubik text-gradient hidden sm:block">
               VIBE CODING
             </h1>
           </div>
 
-          <Button variant="ghost" size="icon" onClick={handleSignOut}>
-            <LogOut className="h-5 w-5" />
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={toggleTheme}
+              className="relative"
+              aria-label={isDark ? 'מצב בהיר' : 'מצב כהה'}
+            >
+              {isDark ? (
+                <Sun className="h-5 w-5 rotate-0 scale-100 transition-all" />
+              ) : (
+                <Moon className="h-5 w-5 rotate-0 scale-100 transition-all" />
+              )}
+            </Button>
+
+            <Button variant="ghost" size="icon" onClick={handleSignOut}>
+              <LogOut className="h-5 w-5" />
+            </Button>
+          </div>
         </div>
       </header>
 
